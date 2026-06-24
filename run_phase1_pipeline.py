@@ -106,6 +106,12 @@ def main():
         cmd = [
             sys.executable,
             "esm/esm2_mutations.py",
+            "--device",
+            args.device,
+            "--top-k",
+            str(args.top_k),
+            "--output",
+            "data/mutations/esm2_mutations.csv",
         ]
 
         if not run_command(cmd, "ESM2 mutation generation"):
@@ -172,17 +178,43 @@ def main():
     print("PHASE 1, STEP 5: Solvent Accessibility")
     print("█"*70)
 
-    cmd = [sys.executable, "analysis/accesibility_score.py"]
+    cmd = [sys.executable, "analysis/accessibility_score.py"]
     if not run_command(cmd, "Accessibility scoring"):
         print("⚠️  Accessibility scoring failed")
     else:
         pipeline_steps.append("✓ Accessibility")
 
     # ========================================================================
-    # STEP 6: EXPRESSION SCORING
+    # STEP 6: EPITOPE PRESERVATION
     # ========================================================================
     print("\n" + "█"*70)
-    print("PHASE 1, STEP 6: Basic Expression Scoring")
+    print("PHASE 1, STEP 6: Epitope Preservation")
+    print("█"*70)
+
+    cmd = [sys.executable, "analysis/epitope_preservation_score.py"]
+    if not run_command(cmd, "Epitope preservation scoring"):
+        print("⚠️  Epitope scoring failed")
+    else:
+        pipeline_steps.append("✓ Epitope preservation")
+
+    # ========================================================================
+    # STEP 7: STRUCTURAL CONTEXT
+    # ========================================================================
+    print("\n" + "█"*70)
+    print("PHASE 1, STEP 7: Structural Context")
+    print("█"*70)
+
+    cmd = [sys.executable, "analysis/structural_context_score.py"]
+    if not run_command(cmd, "Structural context scoring"):
+        print("⚠️  Structural context scoring failed")
+    else:
+        pipeline_steps.append("✓ Structural context")
+
+    # ========================================================================
+    # STEP 8: EXPRESSION SCORING
+    # ========================================================================
+    print("\n" + "█"*70)
+    print("PHASE 1, STEP 8: Basic Expression Scoring")
     print("█"*70)
 
     cmd = [sys.executable, "analysis/expression_score.py"]
@@ -192,11 +224,11 @@ def main():
         pipeline_steps.append("✓ Expression")
 
     # ========================================================================
-    # STEP 7: SOLUBILITY SCORING (NEW - PHASE 1)
+    # STEP 9: SOLUBILITY SCORING
     # ========================================================================
     if not args.skip_solubility:
         print("\n" + "█"*70)
-        print("PHASE 1, STEP 7: E. coli Solubility Scoring (NEW)")
+        print("PHASE 1, STEP 9: E. coli Solubility Scoring")
         print("█"*70)
         print("\nScoring mutations for E. coli expression solubility...")
 
@@ -204,16 +236,16 @@ def main():
         if not run_command(cmd, "Solubility scoring"):
             print("⚠️  Solubility scoring failed")
         else:
-            pipeline_steps.append("✓ Solubility (NEW)")
+            pipeline_steps.append("✓ Solubility")
     else:
         print("\n⊘ Skipping solubility scoring")
         pipeline_steps.append("⊘ Solubility (skipped)")
 
     # ========================================================================
-    # STEP 8: COMBINED RANKING (UPDATED)
+    # STEP 10: COMBINED RANKING
     # ========================================================================
     print("\n" + "█"*70)
-    print("PHASE 1, STEP 8: Integrated Ranking")
+    print("PHASE 1, STEP 10: Integrated Ranking")
     print("█"*70)
     print("\nCombining scores with normalized weighting...")
     print("  - Thermostability: 35%")

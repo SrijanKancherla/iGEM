@@ -1,120 +1,157 @@
-import pandas as pd
+from pathlib import Path
+
 import numpy as np
+import pandas as pd
 
-from analysis.scoring_utils import (
-    tcell_penalty,
-    bcell_penalty,
-    conservation_penalty,
-    expression_penalty
-)
+from residue_mapping import residue_map_by_pos
 
-# ============================================================================
-# LOAD DATA
-# ============================================================================
 
-df = pd.read_csv("results/3_epitope_scores.csv")
+INPUT_CSV = "results/7_solubility.csv"
+OUTPUT_CSV = "results/final_ranked.csv"
+SIMPLE_OUTPUT_CSV = "results/final_ranked_simple.csv"
 
-# PHASE 1: Add solubility scores (NEW)
-solubility_df = pd.read_csv("results/solubility_scores.csv")
-df = df.merge(
-    solubility_df[["pos", "wt", "mut", "solubility_score"]],
-    on=["pos", "wt", "mut"],
-    how="left"
-)
 
-# ============================================================================
-# COMPUTE PENALTIES
-# ============================================================================
+def norm_higher_better(series):
+    series = series.astype(float)
+    lo = series.quantile(0.05)
+    hi = series.quantile(0.95)
+    if hi == lo:
+        return pd.Series(0.5, index=series.index)
+    return ((series - lo) / (hi - lo)).clip(0, 1)
 
-df["tcell_penalty"] = df["pos"].apply(tcell_penalty)
-df["bcell_penalty"] = df["pos"].apply(bcell_penalty)
-df["conservation_penalty"] = df["pos"].apply(conservation_penalty)
-df["expression_penalty"] = df.apply(lambda r: expression_penalty(r["wt"], r["mut"]), axis=1)
 
-# ============================================================================
-# NORMALIZE SCORES TO [0, 1] SCALE
-# ============================================================================
-# This makes combination more interpretable and principled.
+def norm_lower_better(series):
+    return 1.0 - norm_higher_better(series)
 
-# ddG: lower (more stable) is better. Normalize to [0, 1] where 1 = best stability
-# Assume ddG < -5 is excellent, ddG > 5 is poor
-ddg_min = df["ddg"].quantile(0.1)  # 10th percentile is "good"
-ddg_max = df["ddg"].quantile(0.9)  # 90th percentile is "bad"
-df["ddg_norm"] = 1.0 - np.clip((df["ddg"] - ddg_min) / (ddg_max - ddg_min), 0, 1)
 
-# Solubility: already on 0-10 scale, normalize to [0, 1]
-df["solubility_norm"] = df["solubility_score"] / 10.0
+def penalty_to_score(series):
+    series = series.fillna(0).astype(float)
+    max_val = max(float(series.max()), 1.0)
+    return (1.0 - (series / max_val)).clip(0, 1)
 
-# Penalties: convert to [0, 1] where 1 = no penalty, 0 = worst penalty
-# Each penalty has different scale; normalize them
-tcell_max = df["tcell_penalty"].max()
-bcell_max = df["bcell_penalty"].max()
-cons_max = df["conservation_penalty"].max()
-expr_max = df["expression_penalty"].max()
 
-df["tcell_norm"] = 1.0 - (df["tcell_penalty"] / max(tcell_max, 1))
-df["bcell_norm"] = 1.0 - (df["bcell_penalty"] / max(bcell_max, 1))
-df["conservation_norm"] = 1.0 - (df["conservation_penalty"] / max(cons_max, 1))
-df["expression_norm"] = 1.0 - (df["expression_penalty"] / max(expr_max, 1))
+def build_flags(row):
+    flags = []
 
-# ============================================================================
-# FINAL SCORE WITH PRINCIPLED WEIGHTING
-# ============================================================================
-# Weights based on design priorities for E. coli thermostable protein:
-# - Thermostability (main goal): 35%
-# - Solubility (critical for E. coli): 25%
-# - Immune epitope preservation: 25%
-# - Other expression factors: 15%
+    if bool(row.get("in_antibody_contact", False)):
+        flags.append("protected_epitope_or_contact")
+    if row.get("bonding_penalty", 0) >= 25:
+        flags.append("possible_disulfide_loss")
+    if row.get("structural_flags", ""):
+        flags.extend(str(row["structural_flags"]).split(";"))
+    if row.get("ddg", 0) >= 5:
+        flags.append("bad_rosetta_ddg")
+    if row.get("solubility_score", 10) < 5:
+        flags.append("low_solubility")
+    if row.get("accessibility_penalty", 0) >= 12:
+        flags.append("accessibility_risk")
 
-df["final_score"] = (
-    0.35 * df["ddg_norm"]           # Thermostability
-    + 0.25 * df["solubility_norm"]  # Solubility (NEW)
-    + 0.15 * df["tcell_norm"]       # T-cell epitope protection
-    + 0.15 * df["bcell_norm"]       # B-cell epitope protection
-    + 0.10 * df["conservation_norm"] # Sequence conservation
-    + 0.05 * df["expression_norm"]  # Expression penalties
-)
+    return ";".join(sorted(set(flag for flag in flags if flag)))
 
-# Ensure score is in [0, 1]
-df["final_score"] = np.clip(df["final_score"], 0, 1)
 
-# Sort by final score (descending = best first)
-df = df.sort_values("final_score", ascending=False)
+def recommendation(row):
+    flags = set(str(row.get("flags", "")).split(";")) if row.get("flags", "") else set()
+    severe = {
+        "possible_disulfide_loss",
+        "buried_charge",
+        "bad_rosetta_ddg",
+        "low_solubility",
+    }
 
-# Save comprehensive results
-df.to_csv("results/final_ranked.csv", index=False)
+    if flags & severe:
+        return "reject"
+    if row["final_score"] >= 0.75 and row["confidence_score"] >= 0.65 and not flags:
+        return "strong_candidate"
+    if row["final_score"] >= 0.60:
+        return "candidate"
+    return "review_manually"
 
-# Save simplified results (for easier reading)
-output_cols = [
-    "pos", "wt", "mut", "ddg", "solubility_score",
-    "tcell_penalty", "bcell_penalty", "conservation_penalty",
-    "expression_penalty", "final_score"
-]
-df[output_cols].to_csv("results/final_ranked_simple.csv", index=False)
 
-print("\n" + "="*70)
-print("PHASE 1 RESULTS: Thermostability + Solubility Pipeline")
-print("="*70)
-print(f"\nTotal mutations analyzed: {len(df)}")
-print(f"\nFinal score range: [{df['final_score'].min():.3f}, {df['final_score'].max():.3f}]")
-print(f"Mean final score: {df['final_score'].mean():.3f}")
+def main():
+    df = pd.read_csv(INPUT_CSV)
 
-print("\n" + "-"*70)
-print("TOP 20 MUTATIONS (Ranked by combined score)")
-print("-"*70)
-print(df[output_cols].head(20).to_string(index=False))
+    mapping = residue_map_by_pos()
+    if "pdb_residue" not in df.columns:
+        df["pdb_residue"] = df["pos"].map(
+            lambda pos: mapping.get(int(pos), {}).get("pdb_residue", int(pos))
+        )
 
-print("\n" + "-"*70)
-print("WEIGHT CONTRIBUTION ANALYSIS")
-print("-"*70)
-print(f"Thermostability:  35% (ddG-based)")
-print(f"Solubility:       25% (E. coli expression)")
-print(f"T-cell epitopes:  15% (immune escape)")
-print(f"B-cell epitopes:  15% (immune escape)")
-print(f"Conservation:     10% (sequence stability)")
-print(f"Expression:        5% (E. coli toxicity)")
-print()
+    if "mutation" not in df.columns:
+        df["mutation"] = df.apply(
+            lambda row: f"{row['wt']}{int(row['pdb_residue'])}{row['mut']}",
+            axis=1,
+        )
 
-print("Saved results to:")
-print("  - results/final_ranked.csv (comprehensive)")
-print("  - results/final_ranked_simple.csv (simplified)")
+    df["stability_score"] = norm_lower_better(df["ddg"])
+    if "foldx_ddg" in df.columns:
+        df["foldx_score"] = norm_lower_better(df["foldx_ddg"])
+        df["stability_score"] = 0.6 * df["stability_score"] + 0.4 * df["foldx_score"]
+
+    df["solubility_norm"] = (df["solubility_score"].fillna(0) / 10.0).clip(0, 1)
+    df["conservation_score"] = penalty_to_score(df.get("conservation_penalty", 0))
+    df["epitope_preservation_score"] = penalty_to_score(df.get("epitope_penalty", 0))
+    df["accessibility_score"] = penalty_to_score(df.get("accessibility_penalty", 0))
+    df["structural_context_score"] = penalty_to_score(df.get("structural_context_penalty", 0))
+    df["expression_score"] = penalty_to_score(df.get("expression_penalty", 0))
+
+    df["final_score"] = (
+        0.25 * df["stability_score"]
+        + 0.20 * df["epitope_preservation_score"]
+        + 0.15 * df["solubility_norm"]
+        + 0.15 * df["conservation_score"]
+        + 0.10 * df["accessibility_score"]
+        + 0.10 * df["structural_context_score"]
+        + 0.05 * df["expression_score"]
+    ).clip(0, 1)
+
+    method_votes = []
+    for _, row in df.iterrows():
+        votes = []
+        votes.append(row.get("esm_score", -999) > -8)
+        votes.append(row.get("ddg", 999) < 0)
+        if "foldx_ddg" in df.columns:
+            votes.append(row.get("foldx_ddg", 999) < 0)
+        votes.append(row.get("epitope_penalty", 0) == 0)
+        votes.append(row.get("solubility_score", 0) >= 7)
+        votes.append(row.get("structural_context_penalty", 0) <= 5)
+        method_votes.append(sum(votes) / len(votes))
+
+    df["confidence_score"] = method_votes
+    df["flags"] = df.apply(build_flags, axis=1)
+    df["recommendation"] = df.apply(recommendation, axis=1)
+
+    df = df.sort_values(["recommendation", "final_score"], ascending=[True, False])
+    order = {
+        "strong_candidate": 0,
+        "candidate": 1,
+        "review_manually": 2,
+        "reject": 3,
+    }
+    df["_rec_order"] = df["recommendation"].map(order)
+    df = df.sort_values(["_rec_order", "final_score"], ascending=[True, False])
+    df.insert(0, "rank", range(1, len(df) + 1))
+    df = df.drop(columns=["_rec_order"])
+
+    output_cols = [
+        "rank", "pos", "pdb_residue", "wt", "mut", "mutation",
+        "esm_score", "ddg", "stability_score", "rsa", "surface_class",
+        "conservation_score", "epitope_penalty", "tcell_penalty",
+        "bcell_penalty", "solubility_score", "expression_score",
+        "structural_context_penalty", "final_score", "confidence_score",
+        "flags", "recommendation",
+    ]
+    output_cols = [col for col in output_cols if col in df.columns]
+
+    Path("results").mkdir(exist_ok=True)
+    df.to_csv(OUTPUT_CSV, index=False)
+    df[output_cols].to_csv(SIMPLE_OUTPUT_CSV, index=False)
+
+    print("Final ranking complete")
+    print(f"Analyzed mutations: {len(df)}")
+    print(f"Saved: {OUTPUT_CSV}")
+    print(f"Saved: {SIMPLE_OUTPUT_CSV}")
+    print(df[output_cols].head(20).to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()

@@ -78,7 +78,11 @@ min_mover.min_type("lbfgs_armijo_nonmonotone")
 # LOAD MUTATIONS
 # ----------------------------------------
 
-df = pd.read_csv("data/mutations/esm_candidates.csv")
+mutation_csv = "data/mutations/esm2_mutations.csv"
+if not os.path.exists(mutation_csv):
+    mutation_csv = "data/mutations/esm_candidates.csv"
+
+df = pd.read_csv(mutation_csv)
 
 results = []
 
@@ -115,6 +119,7 @@ for i, row in df.iterrows():
             row["pos"],
             row["wt"],
             row["mut"],
+            row.get("esm_score", np.nan),
             ddg,
         ]
     )
@@ -128,7 +133,7 @@ for i, row in df.iterrows():
 
 out = pd.DataFrame(
     results,
-    columns=["pos", "wt", "mut", "ddg"]
+    columns=["pos", "wt", "mut", "esm_score", "ddg"]
 )
 
 out.to_csv("results/rosetta_ddg.csv", index=False)

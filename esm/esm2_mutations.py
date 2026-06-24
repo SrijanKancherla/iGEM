@@ -41,7 +41,10 @@ def load_esm2_model(model_name="esm2_t33_650M_UR50D", device="cpu"):
         model, alphabet
     """
     print(f"Loading {model_name}...")
-    model, alphabet = esm.pretrained.load_model_and_alphabet_local(model_name)
+    if hasattr(esm.pretrained, model_name):
+        model, alphabet = getattr(esm.pretrained, model_name)()
+    else:
+        model, alphabet = esm.pretrained.load_model_and_alphabet_local(model_name)
     model = model.to(device)
     model.eval()
     print(f"Model loaded on {device}")
@@ -192,9 +195,18 @@ def generate_mutations_esm2(
 
 
 if __name__ == "__main__":
-    # Example usage
-    fasta_path = "data/cleaned/hbsag.fasta"
-    output_path = "data/mutations/esm2_mutations.csv"
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate ESM2-ranked mutation candidates.")
+    parser.add_argument("--fasta", default="data/cleaned/hbsag.fasta")
+    parser.add_argument("--output", default="data/mutations/esm2_mutations.csv")
+    parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    parser.add_argument("--model-name", default="esm2_t33_650M_UR50D")
+    args = parser.parse_args()
+
+    fasta_path = args.fasta
+    output_path = args.output
 
     # Create output directory
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -203,9 +215,9 @@ if __name__ == "__main__":
     df = generate_mutations_esm2(
         fasta_path,
         output_path,
-        top_k_per_position=10,  # Keep top-10 mutations per position
-        device="cpu",  # Change to "cuda" if GPU available
-        model_name="esm2_t33_650M_UR50D"
+        top_k_per_position=args.top_k,
+        device=args.device,
+        model_name=args.model_name,
     )
 
     print("\nTop 20 mutations by ESM2 score:")

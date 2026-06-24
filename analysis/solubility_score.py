@@ -395,8 +395,8 @@ def add_solubility_to_pipeline(
 
 if __name__ == "__main__":
     # Example usage with mutation file
-    mutation_csv = "data/mutations/esm2_mutations.csv"
-    output_csv = "results/solubility_scores.csv"
+    mutation_csv = "results/6_expression.csv"
+    output_csv = "results/7_solubility.csv"
 
     # Load wild-type sequence
     wt_seq = ""

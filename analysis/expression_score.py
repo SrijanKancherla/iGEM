@@ -5,7 +5,7 @@ from scoring_utils import (
 )
 
 df = pd.read_csv(
-    "results/3_accessibility.csv"
+    "results/5_structural_context.csv"
 )
 
 df["expression_penalty"] = df.apply(
@@ -18,7 +18,7 @@ df["expression_penalty"] = df.apply(
 )
 
 df.to_csv(
-    "results/4_expression.csv",
+    "results/6_expression.csv",
     index=False
 )
 
