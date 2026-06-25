@@ -11,9 +11,9 @@ The pipeline scores candidate mutations through a staged workflow:
 1. Generate candidate substitutions with ESM2 sequence-likelihood scoring.
 2. Estimate structural stability with Rosetta ddG.
 3. Remove catastrophic mutations with an initial ddG filter.
-4. Add conservation penalties.
+4. Add MSA-based conservation penalties, or a clearly marked fallback score if no MSA is provided.
 5. Estimate solvent accessibility from the cleaned PDB structure.
-6. Score epitope preservation using HBsAg antigenic regions and antibody-contact-sensitive residues.
+6. Predict and score epitope preservation using HBsAg antigenic regions, antibody-contact-sensitive residues, internal MHC-I/MHC-II motif scoring, and B-cell antigenicity changes.
 7. Score structural context risks such as cysteine loss, buried charge, proline/glycine introduction, and interface mutation.
 8. Score expression penalties.
 9. Score E. coli solubility risk.
@@ -32,6 +32,8 @@ analysis/                         Scoring and ranking modules
 esm/                              ESM2 candidate generation
 rosetta/                          PyRosetta ddG scan
 scripts/run_pipeline.sh           Main runnable pipeline script
+scripts/run_phase2_analysis.sh    Phase 2 input-preparation script
+phase2/                           ProteinMPNN and MD preparation modules
 results/                          Generated intermediate and final outputs
 ```
 
@@ -83,14 +85,43 @@ Output:
 results/1_filtered.csv
 ```
 
-### `analysis/conservation_score.py`
+### `analysis/conservation_msa_score.py`
 
-Adds a conservation penalty. The current implementation uses known/high-risk HBsAg positions as a placeholder until an MSA-based conservation model is added.
+Adds a conservation penalty from an aligned FASTA MSA when available.
+
+Expected optional MSA input:
+
+```text
+data/msa/hbsag_msa.fasta
+```
+
+The first MSA sequence should match `data/cleaned/hbsag.fasta` after removing gaps. The module maps ungapped sequence positions to MSA columns, computes residue frequencies, consensus residue, normalized entropy, and a mutation-specific conservation penalty.
+
+If no MSA is present, the pipeline still runs and marks:
+
+```text
+conservation_mode = fallback_no_msa
+```
 
 Output:
 
 ```text
 results/2_conservation.csv
+```
+
+Important columns:
+
+```text
+alignment_column
+msa_depth
+msa_observed
+msa_consensus
+wt_frequency
+mut_frequency
+position_entropy
+conservation_score_raw
+conservation_penalty
+conservation_mode
 ```
 
 ### `analysis/residue_mapping.py`
@@ -131,17 +162,20 @@ Important columns:
 asa, rsa, surface_class, accessibility_penalty
 ```
 
-### `analysis/epitope_preservation_score.py`
+### `analysis/epitope_prediction_score.py`
 
-Scores whether a mutation falls in HBsAg immune-sensitive regions:
+Predicts and scores whether a mutation may disrupt immune-sensitive regions:
 
 ```text
 MHR: 99-169
 Major epitope: 124-147
 Antibody-contact-sensitive residues from 9UBQ context
+Internal MHC-I anchor-motif model
+Internal MHC-II core-motif model
+B-cell antigenicity delta
 ```
 
-Conservative substitutions are penalized less than disruptive substitutions.
+This is an internal theoretical predictor, not a replacement for NetMHCpan, IEDB tools, or experimental epitope mapping. Conservative substitutions are penalized less than disruptive substitutions.
 
 Output:
 
@@ -153,7 +187,12 @@ Important columns:
 
 ```text
 in_mhr, in_major_epitope, in_antibody_contact,
-tcell_penalty, bcell_penalty, epitope_penalty
+wt_mhci_score, mut_mhci_score, mhci_delta,
+wt_mhcii_score, mut_mhcii_score, mhcii_delta,
+wt_tcell_epitope_score, mut_tcell_epitope_score,
+tcell_epitope_delta, bcell_antigenicity_delta,
+tcell_penalty, bcell_penalty, epitope_penalty,
+epitope_prediction_mode
 ```
 
 ### `analysis/structural_context_score.py`
@@ -280,6 +319,10 @@ conservation_score
 epitope_penalty
 tcell_penalty
 bcell_penalty
+wt_tcell_epitope_score
+mut_tcell_epitope_score
+tcell_epitope_delta
+bcell_antigenicity_delta
 solubility_score
 expression_score
 structural_context_penalty
@@ -335,7 +378,37 @@ Use a specific Python executable:
 PYTHON_BIN=.venv/bin/python bash scripts/run_pipeline.sh
 ```
 
-## Optional Future Modules
+## Phase 2 Analysis
+
+After Phase 1 generates `results/final_ranked.csv`, prepare focused inputs for ProteinMPNN and MD:
+
+```bash
+bash scripts/run_phase2_analysis.sh
+```
+
+Useful variants:
+
+```bash
+TOP_N_MPNN=30 bash scripts/run_phase2_analysis.sh
+TOP_N_MD=5 bash scripts/run_phase2_analysis.sh
+PYTHON_BIN=.venv/bin/python bash scripts/run_phase2_analysis.sh
+```
+
+Phase 2 outputs:
+
+```text
+phase2/proteinmpnn/inputs/proteinmpnn_candidates.csv
+phase2/proteinmpnn/inputs/mutable_positions.jsonl
+phase2/proteinmpnn/inputs/run_notes.txt
+phase2/md/inputs/md_candidates.csv
+phase2/md/inputs/mutation_specs.tsv
+phase2/md/inputs/mutant_fastas/
+phase2/md/inputs/run_notes.txt
+```
+
+Phase 2 prepares inputs only. It does not run ProteinMPNN or MD engines because those require separate external installation and project-specific settings.
+
+## Optional External Modules
 
 These are useful additions, but they require external tools or heavier setup:
 
@@ -356,10 +429,10 @@ Rosetta/FoldX disagreement = manual review
 
 ### ProteinMPNN
 
-Use as a structure-conditioned candidate generator:
+Use as a structure-conditioned candidate generator. The Phase 2 script prepares candidate and mutable-position inputs:
 
 ```text
-proteinmpnn/generate_candidates.py -> data/mutations/proteinmpnn_candidates.csv
+phase2/proteinmpnn/prepare_inputs.py
 ```
 
 Recommended constraints:
@@ -376,7 +449,7 @@ freeze highly conserved residues
 Use only as final validation for top candidates, not as a bulk-screening step:
 
 ```text
-md/prepare_top_candidates.py
+phase2/md/prepare_md_candidates.py
 ```
 
 Good MD checks:
@@ -396,11 +469,11 @@ The pipeline is intentionally conservative. It is meant to rank theoretical cand
 Current limitations:
 
 ```text
-Conservation is still placeholder-based until an MSA is added.
-T-cell scoring does not yet use real MHC-binding prediction.
+Conservation is MSA-based when `data/msa/hbsag_msa.fasta` is provided; otherwise it falls back to placeholder rules.
+T-cell scoring uses internal motif-style prediction and should be replaced with NetMHCpan/IEDB-style predictors for serious work.
 Rosetta ddG should be calibrated before being treated quantitatively.
 Solubility is heuristic and should be treated as risk scoring, not prediction.
-FoldX, ProteinMPNN, and MD are documented extension points, not default stages.
+FoldX, ProteinMPNN, and MD are external/deeper analysis steps, not default Phase 1 stages.
 ```
 
-The most important next scientific upgrade is MSA-based conservation plus real epitope prediction. The most important engineering upgrade is adding regression tests around the expected intermediate CSV schema.
+The most important next scientific upgrade is replacing the internal epitope motif model with a real external MHC-binding predictor and adding a curated HBsAg MSA. The most important engineering upgrade is adding regression tests around the expected intermediate CSV schema.

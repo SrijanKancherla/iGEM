@@ -43,8 +43,8 @@ echo "[4/10] Conservation scoring"
 echo "[5/10] Solvent accessibility scoring"
 "$PYTHON_BIN" analysis/accessibility_score.py
 
-echo "[6/10] Epitope preservation scoring"
-"$PYTHON_BIN" analysis/epitope_preservation_score.py
+echo "[6/10] Epitope prediction and preservation scoring"
+"$PYTHON_BIN" analysis/epitope_prediction_score.py
 
 echo "[7/10] Structural context scoring"
 "$PYTHON_BIN" analysis/structural_context_score.py

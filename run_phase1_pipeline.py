@@ -188,14 +188,14 @@ def main():
     # STEP 6: EPITOPE PRESERVATION
     # ========================================================================
     print("\n" + "█"*70)
-    print("PHASE 1, STEP 6: Epitope Preservation")
+    print("PHASE 1, STEP 6: Epitope Prediction and Preservation")
     print("█"*70)
 
-    cmd = [sys.executable, "analysis/epitope_preservation_score.py"]
-    if not run_command(cmd, "Epitope preservation scoring"):
+    cmd = [sys.executable, "analysis/epitope_prediction_score.py"]
+    if not run_command(cmd, "Epitope prediction scoring"):
         print("⚠️  Epitope scoring failed")
     else:
-        pipeline_steps.append("✓ Epitope preservation")
+        pipeline_steps.append("✓ Epitope prediction")
 
     # ========================================================================
     # STEP 7: STRUCTURAL CONTEXT
@@ -277,9 +277,9 @@ def main():
 
     print("\nNext steps:")
     print("  1. Review top 20 mutations in results/final_ranked_simple.csv")
-    print("  2. (Optional) Phase 2: Add real DSSP + AlphaFold validation")
-    print("  3. (Optional) Phase 3: FoldX cross-validation")
-    print("  4. Synthesize and experimentally validate top candidates")
+    print("  2. Run Phase 2 input preparation: bash scripts/run_phase2_analysis.sh")
+    print("  3. (Optional) Add FoldX cross-validation")
+    print("  4. Review top candidates before any external modelling")
 
     print()
 

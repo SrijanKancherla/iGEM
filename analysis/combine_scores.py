@@ -45,6 +45,10 @@ def build_flags(row):
         flags.append("low_solubility")
     if row.get("accessibility_penalty", 0) >= 12:
         flags.append("accessibility_risk")
+    if row.get("tcell_epitope_delta", 0) <= -0.2 and row.get("wt_tcell_epitope_score", 0) >= 0.55:
+        flags.append("predicted_tcell_epitope_loss")
+    if row.get("bcell_antigenicity_delta", 0) <= -0.15 and bool(row.get("in_mhr", False)):
+        flags.append("predicted_bcell_antigenicity_loss")
 
     return ";".join(sorted(set(flag for flag in flags if flag)))
 
@@ -112,6 +116,7 @@ def main():
         if "foldx_ddg" in df.columns:
             votes.append(row.get("foldx_ddg", 999) < 0)
         votes.append(row.get("epitope_penalty", 0) == 0)
+        votes.append(row.get("tcell_epitope_delta", 0) > -0.2)
         votes.append(row.get("solubility_score", 0) >= 7)
         votes.append(row.get("structural_context_penalty", 0) <= 5)
         method_votes.append(sum(votes) / len(votes))
@@ -136,9 +141,10 @@ def main():
         "rank", "pos", "pdb_residue", "wt", "mut", "mutation",
         "esm_score", "ddg", "stability_score", "rsa", "surface_class",
         "conservation_score", "epitope_penalty", "tcell_penalty",
-        "bcell_penalty", "solubility_score", "expression_score",
-        "structural_context_penalty", "final_score", "confidence_score",
-        "flags", "recommendation",
+        "bcell_penalty", "wt_tcell_epitope_score", "mut_tcell_epitope_score",
+        "tcell_epitope_delta", "bcell_antigenicity_delta",
+        "solubility_score", "expression_score", "structural_context_penalty",
+        "final_score", "confidence_score", "flags", "recommendation",
     ]
     output_cols = [col for col in output_cols if col in df.columns]
 
