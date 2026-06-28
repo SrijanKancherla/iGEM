@@ -8,7 +8,6 @@ os.makedirs("data/cleaned", exist_ok=True)
 
 KEEP_CHAINS = ["A"]
 
-
 class SelectChains:
     def __init__(self, keep):
         self.keep = keep

@@ -1,0 +1,7 @@
+ProteinMPNN preparation complete.
+PDB: data/cleaned/hbsag.pdb
+Candidate CSV: proteinmpnn_candidates.csv
+Mutable positions JSONL: mutable_positions.jsonl
+
+Recommended use: constrain/freeze immune epitope residues, antibody-contact residues,
+critical cysteines, and highly conserved positions unless they are intentionally being tested.

@@ -30,6 +30,19 @@ def penalty_to_score(series):
     return (1.0 - (series / max_val)).clip(0, 1)
 
 
+def _nonempty(val):
+    """Return True only if val is a non-null, non-empty, non-'nan' string."""
+    if val is None:
+        return False
+    try:
+        import math
+        if math.isnan(float(val)):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return str(val).strip() not in ("", "nan", "NaN")
+
+
 def build_flags(row):
     flags = []
 
@@ -37,8 +50,9 @@ def build_flags(row):
         flags.append("protected_epitope_or_contact")
     if row.get("bonding_penalty", 0) >= 25:
         flags.append("possible_disulfide_loss")
-    if row.get("structural_flags", ""):
-        flags.extend(str(row["structural_flags"]).split(";"))
+    sf = row.get("structural_flags", "")
+    if _nonempty(sf):
+        flags.extend(str(sf).split(";"))
     if row.get("ddg", 0) >= 5:
         flags.append("bad_rosetta_ddg")
     if row.get("solubility_score", 10) < 5:
@@ -54,7 +68,7 @@ def build_flags(row):
 
 
 def recommendation(row):
-    flags = set(str(row.get("flags", "")).split(";")) if row.get("flags", "") else set()
+    flags = set(str(row.get("flags", "")).split(";")) if _nonempty(row.get("flags", "")) else set()
     severe = {
         "possible_disulfide_loss",
         "buried_charge",
@@ -81,10 +95,7 @@ def main():
         )
 
     if "mutation" not in df.columns:
-        df["mutation"] = df.apply(
-            lambda row: f"{row['wt']}{int(row['pdb_residue'])}{row['mut']}",
-            axis=1,
-        )
+        df["mutation"] = df["wt"] + df["pdb_residue"].astype(int).astype(str) + df["mut"]
 
     df["stability_score"] = norm_lower_better(df["ddg"])
     if "foldx_ddg" in df.columns:
@@ -92,11 +103,14 @@ def main():
         df["stability_score"] = 0.6 * df["stability_score"] + 0.4 * df["foldx_score"]
 
     df["solubility_norm"] = (df["solubility_score"].fillna(0) / 10.0).clip(0, 1)
-    df["conservation_score"] = penalty_to_score(df.get("conservation_penalty", 0))
-    df["epitope_preservation_score"] = penalty_to_score(df.get("epitope_penalty", 0))
-    df["accessibility_score"] = penalty_to_score(df.get("accessibility_penalty", 0))
-    df["structural_context_score"] = penalty_to_score(df.get("structural_context_penalty", 0))
-    df["expression_score"] = penalty_to_score(df.get("expression_penalty", 0))
+    def get_penalty(col):
+        return df[col] if col in df.columns else pd.Series(0.0, index=df.index)
+
+    df["conservation_score"] = penalty_to_score(get_penalty("conservation_penalty"))
+    df["epitope_preservation_score"] = penalty_to_score(get_penalty("epitope_penalty"))
+    df["accessibility_score"] = penalty_to_score(get_penalty("accessibility_penalty"))
+    df["structural_context_score"] = penalty_to_score(get_penalty("structural_context_penalty"))
+    df["expression_score"] = penalty_to_score(get_penalty("expression_penalty"))
 
     df["final_score"] = (
         0.25 * df["stability_score"]

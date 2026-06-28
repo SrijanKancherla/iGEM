@@ -25,18 +25,10 @@ import argparse
 import sys
 from pathlib import Path
 import subprocess
-import json
 from datetime import datetime
 
 
 def run_command(cmd, description):
-    """
-    Run a shell command and report results.
-
-    Args:
-        cmd: Command to run
-        description: Human-readable description of what's running
-    """
     print(f"\n{'='*70}")
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {description}")
     print(f"{'='*70}")
@@ -86,7 +78,6 @@ def main():
     )
     args = parser.parse_args()
 
-    # Create necessary directories
     Path("results").mkdir(exist_ok=True)
     Path("data/mutations").mkdir(parents=True, exist_ok=True)
 
@@ -99,19 +90,15 @@ def main():
         print("\n" + "█"*70)
         print("PHASE 1, STEP 1: ESM2-Based Mutation Generation")
         print("█"*70)
-        print("\nGenerating mutations using pre-trained ESM2 language model...")
-        print(f"Device: {args.device}")
+        print(f"\nDevice: {args.device}")
         print(f"Top-K per position: {args.top_k}")
 
         cmd = [
             sys.executable,
             "esm/esm2_mutations.py",
-            "--device",
-            args.device,
-            "--top-k",
-            str(args.top_k),
-            "--output",
-            "data/mutations/esm2_mutations.csv",
+            "--device", args.device,
+            "--top-k", str(args.top_k),
+            "--output", "data/mutations/esm2_mutations.csv",
         ]
 
         if not run_command(cmd, "ESM2 mutation generation"):
@@ -132,12 +119,7 @@ def main():
         print("█"*70)
         print("\nCalculating thermostability (ddG) using Rosetta...")
 
-        cmd = [
-            sys.executable,
-            "rosetta/ddg_scan.py",
-        ]
-
-        if not run_command(cmd, "Rosetta ddG scan"):
+        if not run_command([sys.executable, "rosetta/ddg_scan.py"], "Rosetta ddG scan"):
             print("⚠️  Rosetta calculation failed (check PyRosetta installation)")
         else:
             pipeline_steps.append("✓ Rosetta ddG")
@@ -152,8 +134,7 @@ def main():
     print("PHASE 1, STEP 3: Initial Filtering")
     print("█"*70)
 
-    cmd = [sys.executable, "analysis/igem_filter.py"]
-    if not run_command(cmd, "Filter catastrophic mutations"):
+    if not run_command([sys.executable, "analysis/igem_filter.py"], "Filter catastrophic mutations"):
         print("⚠️  Filtering step failed")
     else:
         pipeline_steps.append("✓ Filtering")
@@ -165,8 +146,7 @@ def main():
     print("PHASE 1, STEP 4: Conservation Analysis")
     print("█"*70)
 
-    cmd = [sys.executable, "analysis/conservation_score.py"]
-    if not run_command(cmd, "Conservation scoring"):
+    if not run_command([sys.executable, "analysis/conservation_score.py"], "Conservation scoring"):
         print("⚠️  Conservation scoring failed")
     else:
         pipeline_steps.append("✓ Conservation")
@@ -178,8 +158,7 @@ def main():
     print("PHASE 1, STEP 5: Solvent Accessibility")
     print("█"*70)
 
-    cmd = [sys.executable, "analysis/accessibility_score.py"]
-    if not run_command(cmd, "Accessibility scoring"):
+    if not run_command([sys.executable, "analysis/accessibility_score.py"], "Accessibility scoring"):
         print("⚠️  Accessibility scoring failed")
     else:
         pipeline_steps.append("✓ Accessibility")
@@ -191,8 +170,7 @@ def main():
     print("PHASE 1, STEP 6: Epitope Prediction and Preservation")
     print("█"*70)
 
-    cmd = [sys.executable, "analysis/epitope_prediction_score.py"]
-    if not run_command(cmd, "Epitope prediction scoring"):
+    if not run_command([sys.executable, "analysis/epitope_prediction_score.py"], "Epitope prediction scoring"):
         print("⚠️  Epitope scoring failed")
     else:
         pipeline_steps.append("✓ Epitope prediction")
@@ -204,8 +182,7 @@ def main():
     print("PHASE 1, STEP 7: Structural Context")
     print("█"*70)
 
-    cmd = [sys.executable, "analysis/structural_context_score.py"]
-    if not run_command(cmd, "Structural context scoring"):
+    if not run_command([sys.executable, "analysis/structural_context_score.py"], "Structural context scoring"):
         print("⚠️  Structural context scoring failed")
     else:
         pipeline_steps.append("✓ Structural context")
@@ -217,8 +194,7 @@ def main():
     print("PHASE 1, STEP 8: Basic Expression Scoring")
     print("█"*70)
 
-    cmd = [sys.executable, "analysis/expression_score.py"]
-    if not run_command(cmd, "Expression scoring"):
+    if not run_command([sys.executable, "analysis/expression_score.py"], "Expression scoring"):
         print("⚠️  Expression scoring failed")
     else:
         pipeline_steps.append("✓ Expression")
@@ -232,8 +208,7 @@ def main():
         print("█"*70)
         print("\nScoring mutations for E. coli expression solubility...")
 
-        cmd = [sys.executable, "analysis/solubility_score.py"]
-        if not run_command(cmd, "Solubility scoring"):
+        if not run_command([sys.executable, "analysis/solubility_score.py"], "Solubility scoring"):
             print("⚠️  Solubility scoring failed")
         else:
             pipeline_steps.append("✓ Solubility")
@@ -253,8 +228,7 @@ def main():
     print("  - Immune epitopes: 30%")
     print("  - Other factors:   10%")
 
-    cmd = [sys.executable, "analysis/combine_scores.py"]
-    if not run_command(cmd, "Final ranking"):
+    if not run_command([sys.executable, "analysis/combine_scores.py"], "Final ranking"):
         print("❌ Ranking failed")
         sys.exit(1)
     else:

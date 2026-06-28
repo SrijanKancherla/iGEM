@@ -78,22 +78,22 @@ def score_mutation(
     Returns:
         log_prob: Log-probability of the mutation (higher = more likely)
     """
-    # Create masked sequence
-    masked_sequence = list(sequence)
-    masked_sequence[position] = "<mask>"
-    masked_seq_str = "".join(masked_sequence)
+    # Tokenize with batch_converter so BOS/EOS are included
+    batch_converter = alphabet.get_batch_converter()
+    _, _, tokens = batch_converter([("seq", sequence)])
+    tokens = tokens.to(device)
 
-    # Tokenize
-    tokens = alphabet.encode(masked_seq_str)
-    tokens = tokens.unsqueeze(0).to(device)
+    # Mask the target position in token space (+1 for BOS at index 0)
+    tokens_masked = tokens.clone()
+    tokens_masked[0, position + 1] = alphabet.mask_idx
 
     # Get logits
     with torch.no_grad():
-        results = model(tokens, repr_layers=[])
+        results = model(tokens_masked, repr_layers=[])
         logits = results["logits"][0]
 
-    # Extract logits at the masked position
-    pos_logits = logits[position + 1]  # +1 for BOS token
+    # Extract logits at the masked position (+1 for BOS token)
+    pos_logits = logits[position + 1]
 
     # Get log probabilities
     log_probs = torch.log_softmax(pos_logits, dim=0)
@@ -205,16 +205,11 @@ if __name__ == "__main__":
     parser.add_argument("--model-name", default="esm2_t33_650M_UR50D")
     args = parser.parse_args()
 
-    fasta_path = args.fasta
-    output_path = args.output
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 
-    # Create output directory
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-    # Generate mutations (using CPU; switch to "cuda" if available)
     df = generate_mutations_esm2(
-        fasta_path,
-        output_path,
+        args.fasta,
+        args.output,
         top_k_per_position=args.top_k,
         device=args.device,
         model_name=args.model_name,

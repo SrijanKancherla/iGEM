@@ -273,9 +273,9 @@ def score_solubility(
             # Simple proxy: check if mutation uses rare codons
             # In practice, you'd translate back to DNA codons
             cai_penalty = 0
-            if mut_aa in 'ATA':  # Rare amino acids in E. coli
+            if mut_aa == 'I':  # Ile (ATA codon) — rare in E. coli
                 cai_penalty = 3
-            elif mut_aa in 'CGA':  # Moderately rare
+            elif mut_aa == 'R':  # Arg (CGA codon) — moderately rare
                 cai_penalty = 1
 
             codon_score = max(0, 10 - cai_penalty)
