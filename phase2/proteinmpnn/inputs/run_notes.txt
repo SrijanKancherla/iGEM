@@ -6,7 +6,6 @@ Mutable positions JSONL: mutable_positions.jsonl
 Recommended use: constrain/freeze immune epitope residues, antibody-contact residues,
 critical cysteines, and highly conserved positions unless they are intentionally being tested.
 
-
 python phase2/proteinmpnn/Workflow/protein_mpnn_run.py \
   --pdb_path data/cleaned/hbsag.pdb \
   --pdb_path_chains A \

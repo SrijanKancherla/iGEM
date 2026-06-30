@@ -1,0 +1,11 @@
+MD v2 preparation complete.
+Sequences are based on the 226 aa expression construct (no His-tag).
+construct_pos = s_protein_pos + 12 (accounts for 12-aa His-tag in the
+full 238 aa CDS; use s_protein_pos for structure-based numbering).
+
+Suggested MD readouts:
+- RMSD of mutant vs WT AlphaFold backbone (construct_v2/data/cleaned/alphafold_construct.pdb)
+- RMSF around mutated residue ± 10 residues
+- RMSF of 'a' determinant loop (s_protein_pos 99–169)
+- Monitoring of C76–C221 and C90–C65 disulfide distances (confirm intact)
+- Gross unfolding index (fraction of contacts lost vs WT)
