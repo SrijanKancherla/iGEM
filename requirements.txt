@@ -1,0 +1,21 @@
+# Core dependencies for protein thermostability pipeline
+
+# Structural biology & bioinformatics
+biopython>=1.81
+numpy>=1.23.0
+pandas>=1.5.0
+
+# Rosetta (for ddG calculations)
+# Install separately: https://www.rosettacommons.org/
+# pyrosetta requires manual installation
+
+# ESM2 (sequence language model for mutation scoring)
+fair-esm[esmfold]>=2.0.0
+
+# Optional but recommended for visualization
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Development
+pytest>=7.2.0
+black>=23.0.0

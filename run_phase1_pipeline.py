@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+"""
+PHASE 1 PIPELINE: Thermostability + Solubility Scoring
+
+Orchestrates the complete Phase 1 workflow:
+1. ESM2-based mutation generation (replacing heuristics)
+2. Rosetta ddG calculations (existing)
+3. Solubility scoring for E. coli (NEW)
+4. Integrated ranking with normalized scoring
+
+Usage:
+    python run_phase1_pipeline.py
+
+or with custom settings:
+    python run_phase1_pipeline.py --device cuda --top-k 5
+
+Requirements:
+    - fair-esm (ESM2 models)
+    - biopython
+    - pyrosetta (for Rosetta calculations)
+    - pandas, numpy
+"""
+
+import argparse
+import sys
+from pathlib import Path
+import subprocess
+from datetime import datetime
+
+
+def run_command(cmd, description):
+    print(f"\n{'='*70}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {description}")
+    print(f"{'='*70}")
+    print(f"Running: {' '.join(cmd)}")
+    print()
+
+    result = subprocess.run(cmd, capture_output=False, text=True)
+
+    if result.returncode != 0:
+        print(f"\n⚠️  Warning: Command exited with code {result.returncode}")
+        return False
+
+    print(f"\n✓ {description} complete")
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run Phase 1 protein engineering pipeline"
+    )
+    parser.add_argument(
+        "--device",
+        default="cpu",
+        choices=["cpu", "cuda"],
+        help="Device for ESM2 (cpu or cuda if GPU available)"
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=10,
+        help="Keep top-K mutations per position (default: 10)"
+    )
+    parser.add_argument(
+        "--skip-esm",
+        action="store_true",
+        help="Skip ESM2 mutation generation (use existing mutations)"
+    )
+    parser.add_argument(
+        "--skip-rosetta",
+        action="store_true",
+        help="Skip Rosetta calculations (use existing ddG scores)"
+    )
+    parser.add_argument(
+        "--skip-solubility",
+        action="store_true",
+        help="Skip solubility scoring"
+    )
+    args = parser.parse_args()
+
+    Path("results").mkdir(exist_ok=True)
+    Path("data/mutations").mkdir(parents=True, exist_ok=True)
+
+    pipeline_steps = []
+
+    # ========================================================================
+    # STEP 1: ESM2 MUTATION GENERATION
+    # ========================================================================
+    if not args.skip_esm:
+        print("\n" + "█"*70)
+        print("PHASE 1, STEP 1: ESM2-Based Mutation Generation")
+        print("█"*70)
+        print(f"\nDevice: {args.device}")
+        print(f"Top-K per position: {args.top_k}")
+
+        cmd = [
+            sys.executable,
+            "esm/esm2_mutations.py",
+            "--device", args.device,
+            "--top-k", str(args.top_k),
+            "--output", "data/mutations/esm2_mutations.csv",
+        ]
+
+        if not run_command(cmd, "ESM2 mutation generation"):
+            print("❌ ESM2 generation failed. Exiting.")
+            sys.exit(1)
+
+        pipeline_steps.append("✓ ESM2 mutations")
+    else:
+        print("\n⊘ Skipping ESM2 (using existing mutations)")
+        pipeline_steps.append("⊘ ESM2 mutations (skipped)")
+
+    # ========================================================================
+    # STEP 2: ROSETTA DDG CALCULATION
+    # ========================================================================
+    if not args.skip_rosetta:
+        print("\n" + "█"*70)
+        print("PHASE 1, STEP 2: Rosetta ddG Calculation")
+        print("█"*70)
+        print("\nCalculating thermostability (ddG) using Rosetta...")
+
+        if not run_command([sys.executable, "rosetta/ddg_scan.py"], "Rosetta ddG scan"):
+            print("⚠️  Rosetta calculation failed (check PyRosetta installation)")
+        else:
+            pipeline_steps.append("✓ Rosetta ddG")
+    else:
+        print("\n⊘ Skipping Rosetta (using existing ddG scores)")
+        pipeline_steps.append("⊘ Rosetta ddG (skipped)")
+
+    # ========================================================================
+    # STEP 3: FILTERING
+    # ========================================================================
+    print("\n" + "█"*70)
+    print("PHASE 1, STEP 3: Initial Filtering")
+    print("█"*70)
+
+    if not run_command([sys.executable, "analysis/igem_filter.py"], "Filter catastrophic mutations"):
+        print("⚠️  Filtering step failed")
+    else:
+        pipeline_steps.append("✓ Filtering")
+
+    # ========================================================================
+    # STEP 4: CONSERVATION SCORING
+    # ========================================================================
+    print("\n" + "█"*70)
+    print("PHASE 1, STEP 4: Conservation Analysis")
+    print("█"*70)
+
+    if not run_command([sys.executable, "analysis/conservation_score.py"], "Conservation scoring"):
+        print("⚠️  Conservation scoring failed")
+    else:
+        pipeline_steps.append("✓ Conservation")
+
+    # ========================================================================
+    # STEP 5: ACCESSIBILITY ANALYSIS
+    # ========================================================================
+    print("\n" + "█"*70)
+    print("PHASE 1, STEP 5: Solvent Accessibility")
+    print("█"*70)
+
+    if not run_command([sys.executable, "analysis/accessibility_score.py"], "Accessibility scoring"):
+        print("⚠️  Accessibility scoring failed")
+    else:
+        pipeline_steps.append("✓ Accessibility")
+
+    # ========================================================================
+    # STEP 6: EPITOPE PRESERVATION
+    # ========================================================================
+    print("\n" + "█"*70)
+    print("PHASE 1, STEP 6: Epitope Prediction and Preservation")
+    print("█"*70)
+
+    if not run_command([sys.executable, "analysis/epitope_prediction_score.py"], "Epitope prediction scoring"):
+        print("⚠️  Epitope scoring failed")
+    else:
+        pipeline_steps.append("✓ Epitope prediction")
+
+    # ========================================================================
+    # STEP 7: STRUCTURAL CONTEXT
+    # ========================================================================
+    print("\n" + "█"*70)
+    print("PHASE 1, STEP 7: Structural Context")
+    print("█"*70)
+
+    if not run_command([sys.executable, "analysis/structural_context_score.py"], "Structural context scoring"):
+        print("⚠️  Structural context scoring failed")
+    else:
+        pipeline_steps.append("✓ Structural context")
+
+    # ========================================================================
+    # STEP 8: EXPRESSION SCORING
+    # ========================================================================
+    print("\n" + "█"*70)
+    print("PHASE 1, STEP 8: Basic Expression Scoring")
+    print("█"*70)
+
+    if not run_command([sys.executable, "analysis/expression_score.py"], "Expression scoring"):
+        print("⚠️  Expression scoring failed")
+    else:
+        pipeline_steps.append("✓ Expression")
+
+    # ========================================================================
+    # STEP 9: SOLUBILITY SCORING
+    # ========================================================================
+    if not args.skip_solubility:
+        print("\n" + "█"*70)
+        print("PHASE 1, STEP 9: E. coli Solubility Scoring")
+        print("█"*70)
+        print("\nScoring mutations for E. coli expression solubility...")
+
+        if not run_command([sys.executable, "analysis/solubility_score.py"], "Solubility scoring"):
+            print("⚠️  Solubility scoring failed")
+        else:
+            pipeline_steps.append("✓ Solubility")
+    else:
+        print("\n⊘ Skipping solubility scoring")
+        pipeline_steps.append("⊘ Solubility (skipped)")
+
+    # ========================================================================
+    # STEP 10: COMBINED RANKING
+    # ========================================================================
+    print("\n" + "█"*70)
+    print("PHASE 1, STEP 10: Integrated Ranking")
+    print("█"*70)
+    print("\nCombining scores with normalized weighting...")
+    print("  - Thermostability: 35%")
+    print("  - Solubility:      25%")
+    print("  - Immune epitopes: 30%")
+    print("  - Other factors:   10%")
+
+    if not run_command([sys.executable, "analysis/combine_scores.py"], "Final ranking"):
+        print("❌ Ranking failed")
+        sys.exit(1)
+    else:
+        pipeline_steps.append("✓ Final ranking")
+
+    # ========================================================================
+    # SUMMARY
+    # ========================================================================
+    print("\n" + "▓"*70)
+    print("PHASE 1 PIPELINE COMPLETE")
+    print("▓"*70)
+
+    print("\nPipeline steps executed:")
+    for step in pipeline_steps:
+        print(f"  {step}")
+
+    print("\nOutput files:")
+    print("  - results/final_ranked.csv (comprehensive results)")
+    print("  - results/final_ranked_simple.csv (simplified for reading)")
+
+    print("\nNext steps:")
+    print("  1. Review top 20 mutations in results/final_ranked_simple.csv")
+    print("  2. Run Phase 2 input preparation: bash scripts/run_phase2_analysis.sh")
+    print("  3. (Optional) Add FoldX cross-validation")
+    print("  4. Review top candidates before any external modelling")
+
+    print()
+
+
+if __name__ == "__main__":
+    main()

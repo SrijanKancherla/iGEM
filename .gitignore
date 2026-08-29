@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Experimental & temporary
+construct_v2/
+phase2/alphafold/
+phase2/md/
+phase2/proteinmpnn/
+*_v2.py
+results/*.csv
+results/*.json
+data/mutations/*.csv
+*.done.txt
+*.log
+log.txt
+
+# Large files
+*.a3m
+*.npz
+
+# Exclude deprecated files
+analysis/conservation_msa_score.py
+analysis/epitope_prediction_score.py
+analysis/epitope_preservation_score.py
+analysis/structural_context_score.py
+analysis/residue_mapping.py
+analysis/accesibility_score.py
+analysis/final_rank.py
+run_phase1_pipeline_v2.py
+phase2/AlphaFold/analyze_alphafold.py
+phase2/md/prepare_md_candidates_v2.py
+phase2/proteinmpnn/prepare_inputs_v2.py
+
+# Temporary
+*.tmp
+*.cache
+
+# Excluded documentation (removed for publication)
+CLEANUP_GUIDE.md
+CONTRIBUTING.md
+HANDOFF_SUMMARY.md
+IGEM_WIKI_SUMMARY.md
+PHASE1_QUICKSTART.txt
+PHASE1_SETUP.md
+PUBLICATION_CHECKLIST.md

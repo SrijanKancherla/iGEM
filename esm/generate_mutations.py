@@ -1,42 +1,59 @@
-import esm
-import torch
+from pathlib import Path
+
 import pandas as pd
-import os
 
-os.makedirs("data/mutations", exist_ok=True)
 
-# load model
-model, alphabet = esm.pretrained.esm_if1_gvp4_t16_142M_UR50()
-model.eval()
+AMINO_ACIDS = list("ACDEFGHIKLMNPQRSTVWY")
+FASTA_PATH = "data/cleaned/hbsag.fasta"
+OUTPUT_PATH = "data/mutations/esm2_mutations.csv"
 
-batch_converter = alphabet.get_batch_converter()
 
-# load sequence
-seq = open("data/cleaned/hbsag.fasta").read().split("\n")[1]
+def read_fasta(path):
+    sequence = ""
+    with open(path) as handle:
+        for line in handle:
+            if not line.startswith(">"):
+                sequence += line.strip()
+    return sequence.upper()
 
-data = [("hb", seq)]
-labels, strs, tokens = batch_converter(data)
 
-with torch.no_grad():
-    out = model(tokens, repr_layers=[12])
+def heuristic_score(wt, mut):
+    score = 0.0
+    if mut in {"K", "R", "E", "D"}:
+        score -= 0.2
+    if mut == "C":
+        score -= 1.0
+    if mut == "P":
+        score -= 0.8
+    if wt == "C" and mut != "C":
+        score -= 0.6
+    return score
 
-logits = out["logits"][0]
 
-aas = list("ACDEFGHIKLMNPQRSTVWY")
+def main():
+    sequence = read_fasta(FASTA_PATH)
+    mutations = []
 
-rows = []
+    for pos, wt in enumerate(sequence):
+        for mut in AMINO_ACIDS:
+            if mut == wt:
+                continue
 
-for i in range(len(seq)):
-    wt = seq[i]
+            mutations.append(
+                {
+                    "pos": pos,
+                    "wt": wt,
+                    "mut": mut,
+                    "esm_score": heuristic_score(wt, mut),
+                }
+            )
 
-    for aa in aas:
-        if aa == wt:
-            continue
+    df = pd.DataFrame(mutations).sort_values("esm_score", ascending=False)
+    Path(OUTPUT_PATH).parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(OUTPUT_PATH, index=False)
+    print(f"Generated heuristic mutation candidates: {len(df)}")
+    print(f"Saved: {OUTPUT_PATH}")
 
-        score = logits[i, alphabet.get_idx(aa)].item()
-        rows.append([i, wt, aa, score])
 
-df = pd.DataFrame(rows, columns=["pos", "wt", "mut", "esm_score"])
-df.to_csv("data/mutations/esm_candidates.csv", index=False)
-
-print("ESM mutation list saved.")
+if __name__ == "__main__":
+    main()
