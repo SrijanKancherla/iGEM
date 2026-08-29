@@ -1,8 +1,0 @@
-MD preparation complete.
-Use these candidates for focused simulation only after Phase 1 ranking.
-
-Suggested MD readouts:
-- RMSD against WT/reference structure
-- RMSF around epitope loop and mutated residue
-- retention of key contacts/disulfides/salt bridges
-- gross unfolding or local instability

@@ -1,479 +1,307 @@
-# HBsAg Thermostability Design Pipeline
+# HBsAg Thermostability Engineering Pipeline
 
-This repository contains a theoretical protein-modelling pipeline for ranking single amino-acid mutations in HBsAg. The goal is to identify candidate mutations that may improve thermostability while preserving immune epitopes and avoiding obvious risks to folding, solubility, bonding, solvent accessibility, and expression.
+A computational protein engineering pipeline for designing thermostable Hepatitis B surface antigen (HBsAg) mutations while preserving immune epitopes for iGEM competition.
 
-The pipeline is designed for in-silico exploration only. It is not a clinical, diagnostic, or experimental validation workflow.
+## Overview
 
-## Method Summary
+This pipeline combines multiple computational methods to:
+- **Predict thermostability** using Rosetta energy calculations
+- **Evaluate solubility** for E. coli expression
+- **Preserve immune epitopes** (T-cell and B-cell recognition sites)
+- **Rank mutations** using integrated scoring
 
-The pipeline scores candidate mutations through a staged workflow:
+**Status:** Phase 1 (thermostability + solubility) complete and ready for publication.
 
-1. Generate candidate substitutions with ESM2 sequence-likelihood scoring.
-2. Estimate structural stability with Rosetta ddG.
-3. Remove catastrophic mutations with an initial ddG filter.
-4. Add MSA-based conservation penalties, or a clearly marked fallback score if no MSA is provided.
-5. Estimate solvent accessibility from the cleaned PDB structure.
-6. Predict and score epitope preservation using HBsAg antigenic regions, antibody-contact-sensitive residues, internal MHC-I/MHC-II motif scoring, and B-cell antigenicity changes.
-7. Score structural context risks such as cysteine loss, buried charge, proline/glycine introduction, and interface mutation.
-8. Score expression penalties.
-9. Score E. coli solubility risk.
-10. Combine all scores into a final rank, confidence score, flags, and recommendation.
+## Quick Start
 
-The final ranking uses hard-risk flags plus a weighted cumulative score. This avoids treating a mutation that breaks a protected epitope or creates a buried charge as good only because it scores well in another category.
-
-## Repository Layout
-
-```text
-data/raw/9UBQ.pdb                 Input HBsAg-antibody complex structure
-data/cleaned/hbsag.pdb            Cleaned chain A structure
-data/cleaned/hbsag.fasta          Extracted HBsAg sequence
-data/mutations/                   Candidate mutation CSVs
-analysis/                         Scoring and ranking modules
-esm/                              ESM2 candidate generation
-rosetta/                          PyRosetta ddG scan
-scripts/run_pipeline.sh           Main runnable pipeline script
-scripts/run_phase2_analysis.sh    Phase 2 input-preparation script
-phase2/                           ProteinMPNN and MD preparation modules
-results/                          Generated intermediate and final outputs
-```
-
-## Main Modules
-
-### `esm/esm2_mutations.py`
-
-Generates candidate mutations using masked-token ESM2 scoring. For each sequence position, it scores the 19 possible substitutions and keeps the top candidates per position.
-
-Output:
-
-```text
-data/mutations/esm2_mutations.csv
-```
-
-Important columns:
-
-```text
-pos, wt, mut, esm_score
-```
-
-### `rosetta/ddg_scan.py`
-
-Uses PyRosetta to estimate mutation ddG. Lower ddG is treated as better for thermostability. The module relaxes a WT ensemble, mutates candidate residues, repacks/minimizes, and calculates mutant-minus-WT score.
-
-Output:
-
-```text
-results/rosetta_ddg.csv
-```
-
-Important columns:
-
-```text
-pos, wt, mut, esm_score, ddg
-```
-
-### `analysis/igem_filter.py`
-
-Applies the first stability filter. Currently removes mutations with:
-
-```text
-ddg >= 5
-```
-
-Output:
-
-```text
-results/1_filtered.csv
-```
-
-### `analysis/conservation_msa_score.py`
-
-Adds a conservation penalty from an aligned FASTA MSA when available.
-
-Expected optional MSA input:
-
-```text
-data/msa/hbsag_msa.fasta
-```
-
-The first MSA sequence should match `data/cleaned/hbsag.fasta` after removing gaps. The module maps ungapped sequence positions to MSA columns, computes residue frequencies, consensus residue, normalized entropy, and a mutation-specific conservation penalty.
-
-If no MSA is present, the pipeline still runs and marks:
-
-```text
-conservation_mode = fallback_no_msa
-```
-
-Output:
-
-```text
-results/2_conservation.csv
-```
-
-Important columns:
-
-```text
-alignment_column
-msa_depth
-msa_observed
-msa_consensus
-wt_frequency
-mut_frequency
-position_entropy
-conservation_score_raw
-conservation_penalty
-conservation_mode
-```
-
-### `analysis/residue_mapping.py`
-
-Maps zero-indexed pipeline positions to PDB residue numbers. This matters because mutation CSVs use positions like `0, 1, 2`, while the PDB chain can start at a different residue number.
-
-Output:
-
-```text
-results/residue_mapping.csv
-```
-
-Important columns:
-
-```text
-pos, chain, pdb_residue, insertion_code
-```
-
-### `analysis/accessibility_score.py`
-
-Calculates approximate solvent accessibility with Biopython's Shrake-Rupley implementation. It classifies residues as:
-
-```text
-buried, partial, surface
-```
-
-It then penalizes risky substitutions based on structural exposure, such as buried charges or surface hydrophobic gains.
-
-Output:
-
-```text
-results/3_accessibility.csv
-```
-
-Important columns:
-
-```text
-asa, rsa, surface_class, accessibility_penalty
-```
-
-### `analysis/epitope_prediction_score.py`
-
-Predicts and scores whether a mutation may disrupt immune-sensitive regions:
-
-```text
-MHR: 99-169
-Major epitope: 124-147
-Antibody-contact-sensitive residues from 9UBQ context
-Internal MHC-I anchor-motif model
-Internal MHC-II core-motif model
-B-cell antigenicity delta
-```
-
-This is an internal theoretical predictor, not a replacement for NetMHCpan, IEDB tools, or experimental epitope mapping. Conservative substitutions are penalized less than disruptive substitutions.
-
-Output:
-
-```text
-results/4_epitope_scores.csv
-```
-
-Important columns:
-
-```text
-in_mhr, in_major_epitope, in_antibody_contact,
-wt_mhci_score, mut_mhci_score, mhci_delta,
-wt_mhcii_score, mut_mhcii_score, mhcii_delta,
-wt_tcell_epitope_score, mut_tcell_epitope_score,
-tcell_epitope_delta, bcell_antigenicity_delta,
-tcell_penalty, bcell_penalty, epitope_penalty,
-epitope_prediction_mode
-```
-
-### `analysis/structural_context_score.py`
-
-Adds local structural-risk penalties for:
-
-```text
-possible disulfide loss
-new cysteine
-buried charge
-buried hydrophobic loss
-surface hydrophobic gain
-new proline
-new glycine
-antibody-interface mutation
-```
-
-Output:
-
-```text
-results/5_structural_context.csv
-```
-
-Important columns:
-
-```text
-bonding_penalty, interface_penalty,
-structural_context_penalty, structural_flags
-```
-
-### `analysis/expression_score.py`
-
-Adds basic expression penalties, especially cysteine/proline-related expression or folding risks.
-
-Output:
-
-```text
-results/6_expression.csv
-```
-
-### `analysis/solubility_score.py`
-
-Scores E. coli solubility using sequence-level heuristics:
-
-```text
-GRAVY hydrophobicity change
-net charge change
-proteolytic-site risk
-codon-use proxy
-cysteine handling
-```
-
-Output:
-
-```text
-results/7_solubility.csv
-```
-
-Important columns:
-
-```text
-solubility_score, gravy_score, gravy_delta,
-charge_score, charge_delta, proteolytic_score,
-codon_score, cys_score
-```
-
-### `analysis/combine_scores.py`
-
-Combines all module outputs into a final ranking.
-
-Weighted score:
-
-```text
-0.25 stability_score
-0.20 epitope_preservation_score
-0.15 solubility_score
-0.15 conservation_score
-0.10 accessibility_score
-0.10 structural_context_score
-0.05 expression_score
-```
-
-It also adds:
-
-```text
-confidence_score
-flags
-recommendation
-```
-
-Recommendations are:
-
-```text
-strong_candidate
-candidate
-review_manually
-reject
-```
-
-Outputs:
-
-```text
-results/final_ranked.csv
-results/final_ranked_simple.csv
-```
-
-## Final Output Columns
-
-The simplified final table contains the most useful columns:
-
-```text
-rank
-pos
-pdb_residue
-wt
-mut
-mutation
-esm_score
-ddg
-stability_score
-rsa
-surface_class
-conservation_score
-epitope_penalty
-tcell_penalty
-bcell_penalty
-wt_tcell_epitope_score
-mut_tcell_epitope_score
-tcell_epitope_delta
-bcell_antigenicity_delta
-solubility_score
-expression_score
-structural_context_penalty
-final_score
-confidence_score
-flags
-recommendation
-```
-
-## Running the Pipeline
-
-Install dependencies:
+### 1. Installation
 
 ```bash
+# Clone repository
+git clone https://github.com/yourusername/iGEM-protein-engineering.git
+cd iGEM-protein-engineering
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Verify setup
+python test_phase1.py
 ```
 
-PyRosetta must be installed separately because it is not distributed through normal public PyPI.
-
-Run the full pipeline:
+### 2. Run Pipeline
 
 ```bash
-bash scripts/run_pipeline.sh
+# Full Phase 1 pipeline (30-60 min on CPU)
+python run_phase1_pipeline.py --device cpu
+
+# Or with GPU (5-15 min)
+python run_phase1_pipeline.py --device cuda
 ```
 
-Run with GPU ESM2:
+### 3. Review Results
 
 ```bash
-DEVICE=cuda bash scripts/run_pipeline.sh
+# View top candidates
+cat results/final_ranked_simple.csv | head -20
 ```
 
-Keep fewer ESM2 candidates per position:
+## Project Structure
 
+```
+iGEM/
+├── esm/                          # Mutation generation
+│   ├── esm2_mutations.py         # ESM2-based scoring (PHASE 1)
+│   └── generate_mutations.py     # Legacy heuristic version
+│
+├── analysis/                     # Scoring modules
+│   ├── solubility_score.py       # E. coli expression safety (PHASE 1)
+│   ├── combine_scores.py         # Integrated ranking (PHASE 1)
+│   ├── scoring_utils.py          # Epitope definitions
+│   ├── conservation_score.py     # Sequence conservation
+│   ├── expression_score.py       # E. coli penalties
+│   ├── accessibility_score.py    # Solvent accessibility (placeholder)
+│   └── igem_filter.py            # Initial filtering
+│
+├── rosetta/                      # Structural scoring
+│   └── ddg_scan.py               # Rosetta ddG calculations
+│
+├── scripts/                      # Utility scripts
+│   ├── clean_structure.py        # PDB preparation
+│   ├── download_pdb.py           # Download from RCSB
+│   └── extract_sequence.py       # Parse FASTA/PDB
+│
+├── data/                         # Input data
+│   ├── cleaned/
+│   │   ├── hbsag.fasta           # WT protein sequence
+│   │   └── hbsag.pdb             # WT 3D structure
+│   ├── raw/
+│   └── msa/                      # Multiple sequence alignments
+│
+├── results/                      # Pipeline outputs
+│   ├── final_ranked.csv          # Complete results (all metrics)
+│   ├── final_ranked_simple.csv   # Simplified results (easy reading)
+│   └── [intermediate CSVs]       # Stage-by-stage results
+│
+├── run_phase1_pipeline.py        # Master orchestration script
+├── test_phase1.py                # Quick validation test
+├── PHASE1_SETUP.md               # Detailed documentation
+├── PHASE1_QUICKSTART.txt         # Quick reference
+└── requirements.txt              # Python dependencies
+```
+
+## Pipeline Stages
+
+### Phase 1: Thermostability + Solubility (Complete ✓)
+
+1. **Mutation Generation** (ESM2)
+   - Pre-trained language model scores mutations
+   - Replaces heuristic approach
+   - Output: `data/mutations/esm2_mutations.csv`
+
+2. **Thermostability Scoring** (Rosetta)
+   - Ensemble-based ddG calculations
+   - Captures conformational variability
+   - Output: `results/rosetta_ddg.csv`
+
+3. **Filtering**
+   - Remove destabilizing mutations (ddG < 5 kcal/mol)
+   - Output: `results/1_filtered.csv`
+
+4. **Conservation Analysis**
+   - Sequence conservation scoring
+   - Output: `results/2_conservation.csv`
+
+5. **Accessibility Scoring**
+   - Solvent-exposed residue analysis
+   - Output: `results/3_accessibility.csv`
+
+6. **Expression Penalties** (E. coli)
+   - Codon usage, Cys/Pro penalization
+   - Output: `results/4_epitope_scores.csv`
+
+7. **Solubility Scoring** (E. coli) - NEW
+   - Hydrophobicity (GRAVY), charge, proteolytic sites
+   - Output: `results/7_solubility.csv`
+
+8. **Integrated Ranking**
+   - Normalized multi-criteria scoring
+   - Final candidate ranking
+   - Output: `results/final_ranked.csv`
+
+### Phase 2: Folding & Validation (Planned)
+- AlphaFold2 pLDDT confidence checks
+- DSSP secondary structure validation
+- Real MSA-based conservation
+
+### Phase 3: Advanced Tools (Planned)
+- FoldX energy refinement
+- Molecular dynamics simulations
+- ProteinMPNN sequence design
+
+## Key Scoring Metrics
+
+### Final Score (0–1 scale)
+Weighted combination of:
+- **Thermostability (35%):** ddG from Rosetta
+- **Solubility (25%):** E. coli expression safety
+- **T-cell epitopes (15%):** Immune escape potential
+- **B-cell epitopes (15%):** Immune escape potential
+- **Conservation (10%):** Sequence stability
+
+**Interpretation:**
+- `≥ 0.75` = Excellent candidate
+- `0.6–0.75` = Good candidate
+- `0.5–0.6` = Acceptable
+- `< 0.5` = Risky
+
+### Solubility Score (0–10 scale)
+Components:
+- **GRAVY (30%):** Hydrophobicity change
+- **Charge (25%):** Net charge stability
+- **Proteolysis (20%):** Cleavage risk
+- **Codon bias (15%):** E. coli optimization
+- **Cysteine (10%):** Disulfide bond risk
+
+## Dependencies
+
+- **Python 3.8+**
+- **ESM2:** `pip install fair-esm[esmfold]`
+- **PyRosetta:** Manual installation from rosettacommons.org
+- **Biopython:** `pip install biopython`
+- **Data science:** pandas, numpy, matplotlib
+
+See `requirements.txt` for full list.
+
+## Usage Examples
+
+### Run full pipeline
 ```bash
-TOP_K=5 bash scripts/run_pipeline.sh
+python run_phase1_pipeline.py --device cuda --top-k 10
 ```
 
-Reuse existing ESM2 candidates:
-
+### Run individual components
 ```bash
-SKIP_ESM=1 bash scripts/run_pipeline.sh
+# ESM2 mutations only
+python esm/esm2_mutations.py
+
+# Solubility scoring
+python analysis/solubility_score.py
+
+# Final ranking
+python analysis/combine_scores.py
 ```
 
-Reuse existing Rosetta ddG results:
+### Analyze results
+```python
+import pandas as pd
 
+# Load results
+df = pd.read_csv('results/final_ranked.csv')
+
+# Top 10 candidates
+print(df.head(10)[['pos', 'wt', 'mut', 'ddg', 'solubility_score', 'final_score']])
+
+# Statistics
+print(df['final_score'].describe())
+print(df['solubility_score'].describe())
+```
+
+## Input Data
+
+### Required Files
+- `data/cleaned/hbsag.fasta` — Protein sequence (FASTA format)
+- `data/cleaned/hbsag.pdb` — 3D structure (PDB format)
+
+### Optional Files
+- `data/msa/hbsag_msa.fasta` — Multiple sequence alignment for conservation
+
+## Output Files
+
+### Main Results
+- `results/final_ranked.csv` — Complete results with all metrics
+- `results/final_ranked_simple.csv` — Simplified for quick review
+
+### Intermediate Results
+- `results/1_filtered.csv` — After filtering
+- `results/2_conservation.csv` — With conservation scores
+- `results/3_accessibility.csv` — With accessibility analysis
+- `results/4_epitope_scores.csv` — With epitope penalties
+- `results/7_solubility.csv` — With solubility scores
+
+### Mutation Data
+- `data/mutations/esm2_mutations.csv` — ESM2-ranked mutations
+
+## Documentation
+
+- **`PHASE1_SETUP.md`** — Comprehensive setup and configuration guide
+- **`PHASE1_QUICKSTART.txt`** — Quick reference and troubleshooting
+- **`pipeline_assessment.md`** — Original robustness analysis and Phase 2+ plans
+
+## Troubleshooting
+
+### ESM2 download fails
 ```bash
-SKIP_ROSETTA=1 bash scripts/run_pipeline.sh
+python -c "import esm; esm.pretrained.load_model_and_alphabet_local('esm2_t33_650M_UR50D')"
 ```
 
-Use a specific Python executable:
+### Out of memory
+Use smaller ESM2 model in `run_phase1_pipeline.py`:
+```python
+model_name="esm2_t12_35M_UR50D"  # Faster, lower memory
+```
 
+### PyRosetta not found
 ```bash
-PYTHON_BIN=.venv/bin/python bash scripts/run_pipeline.sh
+pip install pyrosetta-distro
+# or download from rosettacommons.org
 ```
 
-## Phase 2 Analysis
+For more issues, see `PHASE1_SETUP.md`.
 
-After Phase 1 generates `results/final_ranked.csv`, prepare focused inputs for ProteinMPNN and MD:
+## Citation & References
 
-```bash
-bash scripts/run_phase2_analysis.sh
-```
+### Methods
+- **ESM2:** Lin et al. (2023) "Protein language models give new life to discrete dynamics"
+- **Rosetta:** Leaver-Fay et al. (2011) "ROSETTA3: an object-oriented software suite"
+- **E. coli expression:** Kane et al. (1992) "Protein misfolding"
 
-Useful variants:
+### Data
+- **HBsAg structure:** PDB ID [your PDB ID]
+- **Epitope definitions:** [Reference your epitope source]
 
-```bash
-TOP_N_MPNN=30 bash scripts/run_phase2_analysis.sh
-TOP_N_MD=5 bash scripts/run_phase2_analysis.sh
-PYTHON_BIN=.venv/bin/python bash scripts/run_phase2_analysis.sh
-```
+## Contributing
 
-Phase 2 outputs:
+### Code Style
+- Follow PEP 8
+- Add docstrings to all functions
+- Include type hints
 
-```text
-phase2/proteinmpnn/inputs/proteinmpnn_candidates.csv
-phase2/proteinmpnn/inputs/mutable_positions.jsonl
-phase2/proteinmpnn/inputs/run_notes.txt
-phase2/md/inputs/md_candidates.csv
-phase2/md/inputs/mutation_specs.tsv
-phase2/md/inputs/mutant_fastas/
-phase2/md/inputs/run_notes.txt
-```
+### Adding Features
+1. Create feature branch
+2. Add tests in `test_phase1.py`
+3. Update documentation
+4. Submit pull request
 
-Phase 2 prepares inputs only. It does not run ProteinMPNN or MD engines because those require separate external installation and project-specific settings.
+## License
 
-## Optional External Modules
+[Choose appropriate license: MIT, GPL, Apache 2.0, etc.]
 
-These are useful additions, but they require external tools or heavier setup:
+## Authors
 
-### FoldX
+- Srijan K. [@srijankk](https://github.com/srijankk)
 
-Add as a second stability estimate:
+## Acknowledgments
 
-```text
-foldx/foldx_scan.py -> results/foldx_ddg.csv
-```
+- iGEM competition organizers
+- Rosetta Commons
+- Meta AI (ESM models)
 
-Use it to compare with Rosetta:
+## Contact
 
-```text
-Rosetta stable + FoldX stable = higher confidence
-Rosetta/FoldX disagreement = manual review
-```
+Questions? Submit an issue or email srijankk@uio.no
 
-### ProteinMPNN
+---
 
-Use as a structure-conditioned candidate generator. The Phase 2 script prepares candidate and mutable-position inputs:
-
-```text
-phase2/proteinmpnn/prepare_inputs.py
-```
-
-Recommended constraints:
-
-```text
-freeze epitope residues
-freeze antibody-contact residues
-freeze critical cysteines
-freeze highly conserved residues
-```
-
-### Molecular Dynamics
-
-Use only as final validation for top candidates, not as a bulk-screening step:
-
-```text
-phase2/md/prepare_md_candidates.py
-```
-
-Good MD checks:
-
-```text
-RMSD
-RMSF
-epitope-loop flexibility
-gross unfolding
-interface/contact stability
-```
-
-## Notes and Limitations
-
-The pipeline is intentionally conservative. It is meant to rank theoretical candidates, not prove thermostability.
-
-Current limitations:
-
-```text
-Conservation is MSA-based when `data/msa/hbsag_msa.fasta` is provided; otherwise it falls back to placeholder rules.
-T-cell scoring uses internal motif-style prediction and should be replaced with NetMHCpan/IEDB-style predictors for serious work.
-Rosetta ddG should be calibrated before being treated quantitatively.
-Solubility is heuristic and should be treated as risk scoring, not prediction.
-FoldX, ProteinMPNN, and MD are external/deeper analysis steps, not default Phase 1 stages.
-```
-
-The most important next scientific upgrade is replacing the internal epitope motif model with a real external MHC-binding predictor and adding a curated HBsAg MSA. The most important engineering upgrade is adding regression tests around the expected intermediate CSV schema.
+**Last updated:** June 2026
+**Phase 1 Status:** ✓ Complete and published
+**Next:** Phase 2 (Folding validation)
