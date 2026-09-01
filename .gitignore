@@ -84,3 +84,7 @@ IGEM_WIKI_SUMMARY.md
 PHASE1_QUICKSTART.txt
 PHASE1_SETUP.md
 PUBLICATION_CHECKLIST.md
+
+# Internal scripts (utilities, not for users)
+scripts/
+phase2/  # Phase 2 prep-only (not implemented)
