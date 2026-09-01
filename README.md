@@ -266,25 +266,7 @@ For more issues, see `PHASE1_SETUP.md`.
 - **E. coli expression:** Kane et al. (1992) "Protein misfolding"
 
 ### Data
-- **HBsAg structure:** PDB ID [your PDB ID]
-- **Epitope definitions:** [Reference your epitope source]
-
-## Contributing
-
-### Code Style
-- Follow PEP 8
-- Add docstrings to all functions
-- Include type hints
-
-### Adding Features
-1. Create feature branch
-2. Add tests in `test_phase1.py`
-3. Update documentation
-4. Submit pull request
-
-## License
-
-[Choose appropriate license: MIT, GPL, Apache 2.0, etc.]
+- **HBsAg structure:** PDB ID 9UBQ
 
 ## Authors
 
@@ -300,8 +282,4 @@ For more issues, see `PHASE1_SETUP.md`.
 
 Questions? Submit an issue or email srijankk@uio.no
 
----
 
-**Last updated:** June 2026
-**Phase 1 Status:** ✓ Complete and published
-**Next:** Phase 2 (Folding validation)
