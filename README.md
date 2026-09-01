@@ -270,7 +270,7 @@ For more issues, see `PHASE1_SETUP.md`.
 
 ## Authors
 
-- Srijan K. [@srijankk](https://github.com/srijankk)
+- Srijan Karthik Kancherla [@SrijanKancherla](https://github.com/SrijanKancherla)
 
 ## Acknowledgments
 
